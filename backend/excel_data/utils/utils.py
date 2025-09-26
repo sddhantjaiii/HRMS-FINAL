@@ -1,21 +1,69 @@
 import threading
 import os
+import math
+from decimal import Decimal, InvalidOperation
 
 # Check if we're in a production/lightweight environment
 USE_LIGHTWEIGHT = os.environ.get('DJANGO_USE_LIGHTWEIGHT', 'false').lower() == 'true'
 
-if USE_LIGHTWEIGHT:
-    # Import lightweight functions for production
-    from .utils_lightweight import *
-else:
-    # Import heavy dependencies for development
+# Import dependencies based on environment
+if not USE_LIGHTWEIGHT:
     try:
         import pandas as pd
         import numpy as np
+        HAS_PANDAS = True
     except ImportError:
-        # Fallback to lightweight if pandas/numpy not available
-        from .utils_lightweight import *
+        HAS_PANDAS = False
         USE_LIGHTWEIGHT = True
+else:
+    HAS_PANDAS = False
+
+# Lightweight utility functions (for when pandas/numpy is not available)
+def is_nan_value(value):
+    """Check if value is NaN (works without pandas/numpy)"""
+    if value is None:
+        return True
+    if isinstance(value, str) and value.strip().lower() in ['nan', 'null', '']:
+        return True
+    if isinstance(value, float) and math.isnan(value):
+        return True
+    return False
+
+def clean_decimal_value(value):
+    """Clean and convert value to decimal - lightweight version"""
+    try:
+        if is_nan_value(value):
+            return Decimal('0.00')
+        str_value = str(value).strip()
+        cleaned = str_value.replace(',', '').replace('%', '').replace('$', '')
+        if not cleaned:
+            return Decimal('0.00')
+        return Decimal(cleaned).quantize(Decimal('0.01'))
+    except (InvalidOperation, ValueError, TypeError):
+        return Decimal('0.00')
+
+def clean_int_value(value):
+    """Clean and convert value to integer - lightweight version"""
+    try:
+        if is_nan_value(value):
+            return 0
+        str_value = str(value).strip()
+        cleaned = str_value.replace(',', '').replace('.0', '')
+        if not cleaned:
+            return 0
+        return int(float(cleaned))
+    except (ValueError, TypeError):
+        return 0
+
+def clean_string_value(value):
+    """Enhanced to handle NaN values without pandas"""
+    if is_nan_value(value):
+        return ""
+    try:
+        str_value = str(value).strip()
+        return str_value if str_value.lower() not in ['nan', 'null', 'none'] else ""
+    except (TypeError, AttributeError):
+        return ""
 
 # Thread local storage for current tenant
 _thread_local = threading.local()

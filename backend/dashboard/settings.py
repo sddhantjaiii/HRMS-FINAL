@@ -89,14 +89,12 @@ AUTH_USER_MODEL = 'excel_data.CustomUser'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
 # Database configuration - Neon PostgreSQL only
-import dj_database_url
-
-# Always use Neon database - no local fallback
 DATABASE_URL = config('DATABASE_URL', default=None)
 
 try:
     if DATABASE_URL:
         # Use DATABASE_URL if provided (recommended for Vercel)
+        import dj_database_url
         DATABASES = {
             'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
         }
@@ -319,31 +317,25 @@ INVITATION_TOKEN_EXPIRY_HOURS = config('INVITATION_TOKEN_EXPIRY_HOURS', default=
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
 FRONTEND_URL = config('FRONTEND_URL', default='https://your-frontend.vercel.app')  # Fallback for deployment
 
-# Logging Configuration
+# Logging Configuration - Simplified for Vercel
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-        },
         'console': {
-            'level': 'DEBUG',
+            'level': 'INFO',
             'class': 'logging.StreamHandler',
         },
     },
     'loggers': {
         'django': {
-            'handlers': ['file', 'console'],
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },
-        'excel_data.middleware': {
+        'root': {
             'handlers': ['console'],
-            'level': 'DEBUG',
-            'propagate': False,
+            'level': 'INFO',
         },
     },
 }

@@ -1,54 +1,48 @@
 """
 WSGI config for Vercel deployment.
-Optimized for serverless function execution with error handling.
+Optimized for serverless function execution.
 """
 
 import os
 import sys
-import logging
 
-# Configure logging for debugging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-try:
-    # Add the backend directory to Python path
-    backend_dir = os.path.dirname(os.path.abspath(__file__))
-    if backend_dir not in sys.path:
-        sys.path.insert(0, backend_dir)
-    
-    logger.info(f"Added to Python path: {backend_dir}")
-    
-    # Set required environment variables for Vercel
-    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dashboard.settings')
-    os.environ.setdefault('DJANGO_USE_LIGHTWEIGHT', 'true')
-    
-    # Import Django WSGI
-    from django.core.wsgi import get_wsgi_application
-    
-    # Create the WSGI application
-    application = get_wsgi_application()
-    logger.info("Django WSGI application created successfully")
-    
-    # Export for Vercel - this is the main handler
-    app = application
-
-except Exception as e:
-    logger.error(f"Error initializing Django application: {str(e)}")
-    import traceback
-    logger.error(traceback.format_exc())
-    
-    # Create a simple error application
-    def error_app(environ, start_response):
-        status = '500 Internal Server Error'
-        headers = [('Content-type', 'application/json')]
-        start_response(status, headers)
-        error_message = {
-            "error": "Django initialization failed",
-            "message": str(e),
-            "path": backend_dir
-        }
+def create_django_app():
+    """Create Django WSGI application with proper error handling"""
+    try:
+        # Add the current directory to Python path
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.insert(0, current_dir)
+        
+        # Set Django settings
+        os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'dashboard.settings')
+        os.environ.setdefault('DJANGO_USE_LIGHTWEIGHT', 'true')
+        
+        # Import and create Django WSGI application
+        from django.core.wsgi import get_wsgi_application
+        return get_wsgi_application()
+        
+    except Exception as e:
+        # Return error handler if Django fails
         import json
-        return [json.dumps(error_message).encode('utf-8')]
-    
-    app = error_app
+        import traceback
+        
+        def error_handler(environ, start_response):
+            status = '500 Internal Server Error'
+            headers = [('Content-Type', 'application/json')]
+            start_response(status, headers)
+            
+            error_data = {
+                "error": "Django initialization failed",
+                "message": str(e),
+                "traceback": traceback.format_exc(),
+                "python_path": sys.path[:3],
+                "environment": dict(os.environ)
+            }
+            
+            return [json.dumps(error_data, indent=2).encode('utf-8')]
+        
+        return error_handler
+
+# Create the application
+app = create_django_app()

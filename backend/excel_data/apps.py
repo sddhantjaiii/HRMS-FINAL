@@ -6,4 +6,12 @@ class ExcelDataConfig(AppConfig):
     name = 'excel_data'
 
     def ready(self):
-        import excel_data.signals
+        try:
+            import excel_data.signals
+        except ImportError as e:
+            # Skip signals import if there are issues (for deployment debugging)
+            import os
+            if os.environ.get('DJANGO_USE_LIGHTWEIGHT') == 'true':
+                pass  # Skip signals in lightweight mode
+            else:
+                raise e
