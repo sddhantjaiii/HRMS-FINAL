@@ -1327,6 +1327,25 @@ def get_months_with_attendance(request):
     
     try:
         tenant = getattr(request, 'tenant', None)
+        
+        # Smart tenant resolution for authenticated users
+        if not tenant and hasattr(request, 'user') and request.user.is_authenticated:
+            try:
+                user_tenant = getattr(request.user, 'tenant', None)
+                if user_tenant and user_tenant.is_active:
+                    tenant = user_tenant
+                else:
+                    # Try to get any active tenant (for single company setups)
+                    from ..models import Tenant
+                    tenant = Tenant.objects.filter(is_active=True).first()
+                    if tenant and not request.user.tenant:
+                        request.user.tenant = tenant
+                        request.user.save()
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error resolving tenant: {e}")
+        
         if not tenant:
             return Response({"error": "No tenant found"}, status=400)
         

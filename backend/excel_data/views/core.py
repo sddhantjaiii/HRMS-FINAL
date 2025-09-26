@@ -851,20 +851,36 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         if not tenant and hasattr(request, 'user') and request.user.is_authenticated:
             try:
                 # Get tenant from authenticated user
-                tenant = request.user.tenant
-                if tenant and tenant.is_active:
+                user_tenant = getattr(request.user, 'tenant', None)
+                if user_tenant and user_tenant.is_active:
+                    tenant = user_tenant
                     # Set tenant in request for downstream processing
                     request.tenant = tenant
                     logger.info(f"Resolved tenant from authenticated user: {tenant.name}")
                 else:
-                    logger.warning(f"User {request.user.email} has no active tenant")
-            except AttributeError:
-                logger.warning(f"User {request.user.email} has no tenant assigned")
+                    # Try to find or create a default tenant for this user
+                    logger.warning(f"User {request.user.email} has no active tenant, attempting to resolve...")
+                    from ..models import Tenant
+                    
+                    # Try to get any active tenant (for single company setups)
+                    tenant = Tenant.objects.filter(is_active=True).first()
+                    if tenant:
+                        logger.info(f"Using default tenant for user: {tenant.name}")
+                        # Optionally assign this tenant to the user
+                        if not request.user.tenant:
+                            request.user.tenant = tenant
+                            request.user.save()
+                            logger.info(f"Assigned default tenant to user {request.user.email}")
+                    else:
+                        logger.error("No active tenants found in the system")
+            except Exception as e:
+                logger.error(f"Error resolving tenant for user {request.user.email}: {e}")
         
         # If still no tenant, return error (multi-tenant system requires tenant)
         if not tenant:
             return Response({
-                "error": "No tenant found. Please ensure you're signed up and have a valid workspace."
+                "error": "No tenant found. Please ensure you're signed up and have a valid workspace.",
+                "details": "No active tenants found in the system. Please contact administrator."
             }, status=400)
             
         # Enhanced cache key with load_all parameter

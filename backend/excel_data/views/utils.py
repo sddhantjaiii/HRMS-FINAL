@@ -876,6 +876,22 @@ def get_eligible_employees_for_date(request):
         start_time = time.time()
         
         tenant = getattr(request, 'tenant', None)
+        
+        # Smart tenant resolution for authenticated users
+        if not tenant and hasattr(request, 'user') and request.user.is_authenticated:
+            try:
+                user_tenant = getattr(request.user, 'tenant', None)
+                if user_tenant and user_tenant.is_active:
+                    tenant = user_tenant
+                else:
+                    # Try to get any active tenant (for single company setups)
+                    tenant = Tenant.objects.filter(is_active=True).first()
+                    if tenant and not request.user.tenant:
+                        request.user.tenant = tenant
+                        request.user.save()
+            except Exception as e:
+                logger.error(f"Error resolving tenant: {e}")
+        
         if not tenant:
             return Response({"error": "No tenant found"}, status=400)
         
