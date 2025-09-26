@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  base: './',
+  root: '.',
+  base: '/',
   resolve: {
     extensions: ['.ts', '.tsx', '.js', '.jsx']
   },
@@ -24,5 +25,6 @@ export default defineConfig({
     outDir: 'dist',
     assetsDir: 'assets',
     sourcemap: false,
+    emptyOutDir: true,
   },
 });
