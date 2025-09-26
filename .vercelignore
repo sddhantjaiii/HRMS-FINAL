@@ -1,0 +1,67 @@
+# Exclude large files and directories not needed for deployment
+
+# Large data files
+backend/monthly_attendance_fixed/
+backend/logs/
+backend/media/
+backend/staticfiles/
+
+# Development files
+backend/tests/
+backend/scripts/
+backend/tools/
+backend/docs/
+
+# Cache and temporary files
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/**/.pytest_cache/
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+
+# Virtual environments
+backend/hrms/
+backend/venv/
+backend/env/
+
+# Database files (if any)
+*.db
+*.sqlite3
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Git files
+.git/
+.gitignore
+
+# Frontend files (not needed for backend deployment)
+frontend/
+node_modules/
+
+# Large Excel files and uploads
+*.xlsx
+*.xls
+*.csv
+
+# Backup files
+*.bak
+*.backup
+
+# Environment files (except the one needed)
+backend/.env.local
+backend/config/
+
+# Documentation
+README.md
+*.md
