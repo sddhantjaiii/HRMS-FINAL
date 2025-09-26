@@ -212,6 +212,7 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
         selected_department = request.query_params.get('department', 'All')
         
         # Always use CalculatedSalary data - no fallback to demo data
+        tenant = getattr(request, 'tenant', None) or (request.user.tenant if hasattr(request.user, 'tenant') else None)
         
         # PERFORMANCE: Try cache first (3 minute cache for charts data)
         from django.core.cache import cache
@@ -220,7 +221,7 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
         query_timings = {}
         
         cache_check_start = time.time()
-        cache_key = f"frontend_charts_{time_period}_{selected_department}"
+        cache_key = f"frontend_charts_{tenant.id if tenant else 'default'}_{time_period}_{selected_department}"
         cached_response = cache.get(cache_key)
         query_timings['cache_check_ms'] = round((time.time() - cache_check_start) * 1000, 2)
         
@@ -259,7 +260,8 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
             # Case-insensitive match so variations like "June" or "june" are handled
             when_conditions.append(When(month__iexact=month_name, then=month_num))
         
-        payroll_periods = PayrollPeriod.objects.annotate(
+        payroll_period_filter = {'tenant': tenant} if tenant else {}
+        payroll_periods = PayrollPeriod.objects.filter(**payroll_period_filter).annotate(
             month_num=Case(
                 *when_conditions,
                 default=13,  # Put unknown months at the end
@@ -664,14 +666,15 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
         
         # PHASE 1 OPTIMIZATION: Cache expensive department lookup with timing
         dept_lookup_start = time.time()
-        dept_cache_key = "all_departments"
+        dept_cache_key = f"all_departments_{tenant.id if tenant else 'default'}"
         
         try:
             from django.core.cache import cache
             all_departments = cache.get(dept_cache_key)
             if all_departments is None:
-                # Fetch all unique departments from EmployeeProfile (for department filter)
-                all_departments_qs = EmployeeProfile.objects.values_list('department', flat=True).distinct()
+                # Fetch all unique departments for the tenant from EmployeeProfile (for department filter)
+                dept_filter = {'tenant': tenant} if tenant else {}
+                all_departments_qs = EmployeeProfile.objects.filter(**dept_filter).values_list('department', flat=True).distinct()
                 all_departments = sorted(set([d for d in all_departments_qs if d and d.strip() and d.strip().upper() != 'N/A']))
                 if not all_departments:
                     all_departments = ['N/A']
@@ -682,7 +685,8 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
                 query_timings['dept_lookup_cache_hit_ms'] = round((time.time() - dept_lookup_start) * 1000, 2)
         except Exception as e:
             # Fallback if cache fails
-            all_departments_qs = EmployeeProfile.objects.values_list('department', flat=True).distinct()
+            dept_filter = {'tenant': tenant} if tenant else {}
+            all_departments_qs = EmployeeProfile.objects.filter(**dept_filter).values_list('department', flat=True).distinct()
             all_departments = sorted(set([d for d in all_departments_qs if d and d.strip() and d.strip().upper() != 'N/A']))
             if not all_departments:
                 all_departments = ['N/A']
@@ -839,8 +843,29 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         start_time = time.time()
         timing_breakdown = {}
         
-        # STEP 1: Setup (tenant functionality removed)
+        # STEP 1: Tenant validation and cache setup
         step_start = time.time()
+        tenant = getattr(request, 'tenant', None)
+        
+        # Smart tenant resolution for authenticated users
+        if not tenant and hasattr(request, 'user') and request.user.is_authenticated:
+            try:
+                # Get tenant from authenticated user
+                tenant = request.user.tenant
+                if tenant and tenant.is_active:
+                    # Set tenant in request for downstream processing
+                    request.tenant = tenant
+                    logger.info(f"Resolved tenant from authenticated user: {tenant.name}")
+                else:
+                    logger.warning(f"User {request.user.email} has no active tenant")
+            except AttributeError:
+                logger.warning(f"User {request.user.email} has no tenant assigned")
+        
+        # If still no tenant, return error (multi-tenant system requires tenant)
+        if not tenant:
+            return Response({
+                "error": "No tenant found. Please ensure you're signed up and have a valid workspace."
+            }, status=400)
             
         # Enhanced cache key with load_all parameter
         load_all = request.GET.get('load_all', '').lower() == 'true'
@@ -848,7 +873,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         page_size = min(int(request.GET.get('page_size', 100)), 500)
         
         cache_signature = f"load_all_{load_all}_page_{page}_size_{page_size}"
-        cache_key = f"directory_data_{cache_signature}"
+        cache_key = f"directory_data_{tenant.id}_{cache_signature}"
         timing_breakdown['setup_ms'] = round((time.time() - step_start) * 1000, 2)
         
         # STEP 2: Cache check
@@ -876,6 +901,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         # STEP 4: LIGHTNING-FAST SALARY SUBQUERY
         step_start = time.time()
         latest_salary_subquery = SalaryData.objects.filter(
+            tenant=tenant,
             employee_id=OuterRef('employee_id')
         ).only('nett_payable', 'month', 'year').order_by('-year', '-month')[:1]
         
@@ -1172,20 +1198,21 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         
         # Clear multiple caches when employee status changes
         from django.core.cache import cache
+        tenant = getattr(request, 'tenant', None) or (request.user.tenant if hasattr(request.user, 'tenant') else None)
         
         # Clear directory data cache
-        cache_key = "directory_data"
+        cache_key = f"directory_data_{tenant.id if tenant else 'default'}"
         cache.delete(cache_key)
         
         # Clear payroll overview cache
-        payroll_cache_key = "payroll_overview"
+        payroll_cache_key = f"payroll_overview_{tenant.id if tenant else 'default'}"
         cache.delete(payroll_cache_key)
-        logger.info("Cleared payroll overview cache")
+        logger.info(f"Cleared payroll overview cache for tenant {tenant.id if tenant else 'default'}")
         
         # Clear daily attendance all_records cache
-        attendance_records_cache_key = "attendance_all_records"
+        attendance_records_cache_key = f"attendance_all_records_{tenant.id if tenant else 'default'}"
         cache.delete(attendance_records_cache_key)
-        logger.info("Cleared attendance all_records cache")
+        logger.info(f"Cleared attendance all_records cache for tenant {tenant.id if tenant else 'default'}")
         
         return Response({
             'message': f'Employee {employee.full_name} is now {"active" if employee.is_active else "inactive"}',
