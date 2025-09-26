@@ -4,6 +4,9 @@ djangorestframework==3.16.0
 djangorestframework-simplejwt==5.3.0
 django-cors-headers==4.7.0
 
+# Python packaging tools (REQUIRED for pkg_resources)
+setuptools==75.0.0
+
 # Database (REQUIRED)
 psycopg2-binary==2.9.9
 dj-database-url==2.1.0
