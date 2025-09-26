@@ -6,6 +6,8 @@ django-cors-headers==4.7.0
 
 # Python packaging tools (REQUIRED for pkg_resources)
 setuptools==75.0.0
+wheel==0.44.0
+packaging==25.0
 
 # Database (REQUIRED)
 psycopg2-binary==2.9.9
