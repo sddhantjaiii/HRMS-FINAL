@@ -31,6 +31,8 @@ class TenantMiddleware(MiddlewareMixin):
         '/admin/',
         '/static/',
         '/media/',
+        '/api/employees/',  # Make all employees API endpoints public
+        '/api/dropdown-options/',  # Make dropdown options public too
     ]
 
     def __call__(self, request):
