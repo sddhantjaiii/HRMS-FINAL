@@ -94,27 +94,37 @@ import dj_database_url
 # Always use Neon database - no local fallback
 DATABASE_URL = config('DATABASE_URL', default=None)
 
-if DATABASE_URL:
-    # Use DATABASE_URL if provided (recommended for Vercel)
-    DATABASES = {
-        'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
-    }
-else:
-    # Use individual Neon database parameters
+try:
+    if DATABASE_URL:
+        # Use DATABASE_URL if provided (recommended for Vercel)
+        DATABASES = {
+            'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+        }
+    else:
+        # Use individual Neon database parameters
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': config('DB_NAME', default='hrms'),  # Fallback name
+                'USER': config('DB_USER', default='postgres'),  # Fallback user
+                'PASSWORD': config('DB_PASSWORD', default=''),  # Required but empty fallback
+                'HOST': config('DB_HOST', default='localhost'),  # Fallback host
+                'PORT': config('DB_PORT', default='5432'),
+                'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes
+                'CONN_HEALTH_CHECKS': True,  # Validate connections before use
+                'OPTIONS': {
+                    'sslmode': 'require',  # Required for Neon
+                    'connect_timeout': 10,
+                }
+            }
+        }
+except Exception as e:
+    # Fallback database configuration for deployment debugging
+    print(f"Database configuration error: {e}")
     DATABASES = {
         'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DB_NAME'),  # Required - no default
-            'USER': config('DB_USER'),  # Required - no default
-            'PASSWORD': config('DB_PASSWORD'),  # Required - no default
-            'HOST': config('DB_HOST'),  # Required - no default
-            'PORT': config('DB_PORT', default='5432'),
-            'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes
-            'CONN_HEALTH_CHECKS': True,  # Validate connections before use
-            'OPTIONS': {
-                'sslmode': 'require',  # Required for Neon
-                'connect_timeout': 10,
-            }
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': ':memory:',  # Temporary in-memory database for debugging
         }
     }
 
@@ -307,7 +317,7 @@ GOOGLE_OAUTH_REFRESH_TOKEN = config('GOOGLE_OAUTH_REFRESH_TOKEN', default='')
 # Invitation and OTP Settings
 INVITATION_TOKEN_EXPIRY_HOURS = config('INVITATION_TOKEN_EXPIRY_HOURS', default=72, cast=int)
 OTP_EXPIRY_MINUTES = config('OTP_EXPIRY_MINUTES', default=10, cast=int)
-FRONTEND_URL = config('FRONTEND_URL')  # Required - no localhost default
+FRONTEND_URL = config('FRONTEND_URL', default='https://your-frontend.vercel.app')  # Fallback for deployment
 
 # Logging Configuration
 LOGGING = {
@@ -351,7 +361,7 @@ DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL', default='noreply@hrms.com')
 # FRONTEND_URL already defined above
 
 # Backend URL for API calls
-BACKEND_URL = config('BACKEND_URL')  # Required - no localhost default
+BACKEND_URL = config('BACKEND_URL', default='https://your-backend.vercel.app')  # Fallback for deployment
 
 # For development - use console email backend
 if DEBUG:

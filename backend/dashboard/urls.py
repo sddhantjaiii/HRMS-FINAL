@@ -17,8 +17,21 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 
+# Import health check views
+try:
+    from health_check import health_check, database_check
+    HEALTH_CHECK_AVAILABLE = True
+except ImportError:
+    HEALTH_CHECK_AVAILABLE = False
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('excel_data.urls')),  # Main HRMS API endpoints
 ]
+
+# Add health check endpoints if available
+if HEALTH_CHECK_AVAILABLE:
+    urlpatterns += [
+        path('health/', health_check, name='health_check'),
+        path('health/db/', database_check, name='database_check'),
+    ]
