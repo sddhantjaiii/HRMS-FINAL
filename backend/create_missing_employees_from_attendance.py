@@ -5,7 +5,12 @@ Script to create missing employees from attendance files
 import os
 import sys
 import django
-import pandas as pd
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+    from excel_data.utils.utils import excel_to_dict_list
 from pathlib import Path
 
 # Set up Django environment

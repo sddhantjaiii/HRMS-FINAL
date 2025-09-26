@@ -6,13 +6,44 @@ Tests the ultra-fast bulk upload API without Django setup.
 Uses direct HTTP requests to test the API endpoint.
 """
 
-import pandas as pd
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+    print('⚠️ pandas not available, using lightweight Excel creation')
+    from openpyxl import Workbook
 import time
 import requests
 from io import BytesIO
+import tempfile
+import os
 
 # Test configuration
 API_BASE_URL = "http://127.0.0.1:8000"
+
+def create_test_excel_from_dict_simple(data_list, filename):
+    """Create Excel file from list of dictionaries - lightweight alternative"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Sheet1'
+    
+    if not data_list:
+        wb.save(filename)
+        return
+    
+    # Write headers
+    headers = list(data_list[0].keys())  
+    for col, header in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=header)
+    
+    # Write data
+    for row_idx, row_data in enumerate(data_list, 2):
+        for col_idx, header in enumerate(headers, 1):
+            value = row_data.get(header, '')
+            ws.cell(row=row_idx, column=col_idx, value=value)
+    
+    wb.save(filename)
 BULK_UPLOAD_URL = f"{API_BASE_URL}/api/employees/bulk_upload/"
 
 def create_test_excel_file(num_employees=50):
@@ -47,11 +78,21 @@ def create_test_excel_file(num_employees=50):
             'OFF DAY': 'Sunday' if i % 2 == 0 else 'Saturday'
         })
     
-    # Create DataFrame and save to Excel
-    df = pd.DataFrame(data)
-    excel_buffer = BytesIO()
-    df.to_excel(excel_buffer, index=False, engine='openpyxl')
-    excel_buffer.seek(0)
+    # Create Excel file with lightweight method
+    if HAS_PANDAS:
+        df = pd.DataFrame(data)
+        excel_buffer = BytesIO()
+        df.to_excel(excel_buffer, index=False, engine='openpyxl')
+        excel_buffer.seek(0)
+    else:
+        # Use lightweight Excel creation
+        import tempfile
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx')
+        create_test_excel_from_dict_simple(data, temp_file.name)
+        temp_file.close()
+        with open(temp_file.name, 'rb') as f:
+            excel_buffer = BytesIO(f.read())
+        os.unlink(temp_file.name)
     
     print(f"✅ Test Excel file created with {len(data)} employees")
     return excel_buffer

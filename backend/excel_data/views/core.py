@@ -1236,11 +1236,19 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         Designation, Employment Type, Branch Location, Shift Start Time, Shift End Time, 
         Basic Salary, Date of birth, Marital status, Gender, Address, Date of joining, TDS (%), OFF DAY
         """
-        import pandas as pd
         import time
         from datetime import datetime, time as dt_time
         from django.db import transaction
-        from ..utils.utils import generate_employee_id_bulk_optimized
+        from ..utils.utils import (
+            generate_employee_id_bulk_optimized,
+            excel_to_dict_list,
+            lightweight_notna,
+            lightweight_to_datetime,
+            lightweight_to_time,
+            safe_str_conversion,
+            safe_float_conversion,
+            safe_int_conversion
+        )
         
         start_time = time.time()
         
@@ -1260,14 +1268,20 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         try:
             print(f"📁 Reading file: {file_obj.name}")
             
-            # STEP 1: Read entire file into memory - FAST
-            if file_obj.name.endswith('.xlsx') or file_obj.name.endswith('.xls'):
-                df = pd.read_excel(file_obj)
-            elif file_obj.name.endswith('.csv'):
-                df = pd.read_csv(file_obj)
-            else:
+            # STEP 1: Read entire file into memory - FAST (lightweight)
+            try:
+                filename = getattr(file_obj, 'name', 'file.xlsx')
+                if filename.endswith('.xlsx') or filename.endswith('.xls'):
+                    data, headers = excel_to_dict_list(file_obj, 'xlsx')
+                elif filename.endswith('.csv'):
+                    data, headers = excel_to_dict_list(file_obj, 'csv')
+                else:
+                    return Response({
+                        'error': 'Unsupported file format. Please upload Excel (.xlsx, .xls) or CSV files only.'
+                    }, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
                 return Response({
-                    'error': 'Unsupported file format. Please upload Excel (.xlsx, .xls) or CSV files only.'
+                    'error': f'Error reading file: {str(e)}'
                 }, status=status.HTTP_400_BAD_REQUEST)
             
             read_time = time.time()
@@ -1289,7 +1303,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
             
             print(f"🔄 Processing {len(df)} employees in memory...")
             
-            for index, row in df.iterrows():
+            for index, row in enumerate(data):
                 try:
                     # Get required fields
                     first_name = str(row.get('First Name', '')).strip()
@@ -1300,14 +1314,14 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
                         continue
                     
                     # Parse optional fields with defaults
-                    mobile_number = str(row.get('Mobile Number', '')).strip() if pd.notna(row.get('Mobile Number')) else ''
-                    email = str(row.get('Email', '')).strip() if pd.notna(row.get('Email')) else ''
-                    department = str(row.get('Department', '')).strip() if pd.notna(row.get('Department')) else ''
-                    designation = str(row.get('Designation', '')).strip() if pd.notna(row.get('Designation')) else ''
-                    address = str(row.get('Address', '')).strip() if pd.notna(row.get('Address')) else ''
-                    nationality = str(row.get('Nationality', '')).strip() if pd.notna(row.get('Nationality')) else ''
-                    city = str(row.get('City', '')).strip() if pd.notna(row.get('City')) else ''
-                    state = str(row.get('State', '')).strip() if pd.notna(row.get('State')) else ''
+                    mobile_number = safe_str_conversion(row.get('Mobile Number', ''))
+                    email = safe_str_conversion(row.get('Email', ''))
+                    department = safe_str_conversion(row.get('Department', ''))
+                    designation = safe_str_conversion(row.get('Designation', ''))
+                    address = safe_str_conversion(row.get('Address', ''))
+                    nationality = safe_str_conversion(row.get('Nationality', ''))
+                    city = safe_str_conversion(row.get('City', ''))
+                    state = safe_str_conversion(row.get('State', ''))
                     
                     # Parse employment type
                     employment_type_map = {
@@ -1334,16 +1348,16 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
                     
                     # Parse dates
                     date_of_birth = None
-                    if pd.notna(row.get('Date of birth')):
+                    if lightweight_notna(row.get('Date of birth')):
                         try:
-                            date_of_birth = pd.to_datetime(row['Date of birth']).date()
+                            date_of_birth = lightweight_to_datetime(row['Date of birth'])
                         except:
                             pass
                     
                     date_of_joining = datetime.now().date()  # Default to today
-                    if pd.notna(row.get('Date of joining')):
+                    if lightweight_notna(row.get('Date of joining')):
                         try:
-                            date_of_joining = pd.to_datetime(row['Date of joining']).date()
+                            date_of_joining = lightweight_to_datetime(row['Date of joining'])
                         except:
                             pass
                     
@@ -1351,7 +1365,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
                     shift_start_time = dt_time(9, 0)  # 09:00
                     shift_end_time = dt_time(18, 0)   # 18:00
                     
-                    if pd.notna(row.get('Shift Start Time')):
+                    if lightweight_notna(row.get('Shift Start Time')):
                         try:
                             time_str = str(row['Shift Start Time']).strip()
                             if ':' in time_str:
@@ -1360,7 +1374,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
                         except:
                             pass
                     
-                    if pd.notna(row.get('Shift End Time')):
+                    if lightweight_notna(row.get('Shift End Time')):
                         try:
                             time_str = str(row['Shift End Time']).strip()
                             if ':' in time_str:
@@ -1371,14 +1385,14 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
                     
                     # Parse numeric fields
                     basic_salary = 0
-                    if pd.notna(row.get('Basic Salary')):
+                    if lightweight_notna(row.get('Basic Salary')):
                         try:
                             basic_salary = float(str(row['Basic Salary']).replace(',', ''))
                         except:
                             pass
                     
                     tds_percentage = 0
-                    if pd.notna(row.get('TDS (%)')):
+                    if lightweight_notna(row.get('TDS (%)')):
                         try:
                             tds_percentage = float(str(row['TDS (%)']).replace('%', ''))
                         except:
@@ -1404,7 +1418,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
                         'email': email,
                         'designation': designation,
                         'employment_type': employment_type,
-                        'location_branch': str(row.get('Branch Location', '')).strip() if pd.notna(row.get('Branch Location')) else '',
+                        'location_branch': safe_str_conversion(row.get('Branch Location', '')),
                         'date_of_birth': date_of_birth,
                         'marital_status': marital_status,
                         'gender': gender,

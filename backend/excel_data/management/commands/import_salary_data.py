@@ -1,6 +1,11 @@
 import os
 from django.conf import settings
-import pandas as pd
+try:
+    import pandas as pd
+    HAS_PANDAS = True
+except ImportError:
+    HAS_PANDAS = False
+    from excel_data.utils.utils import excel_to_dict_list
 from django.core.management.base import BaseCommand
 from excel_data.models import SalaryData  # Adjust to your actual model
 
@@ -9,20 +14,26 @@ class Command(BaseCommand):
 
     def handle(self, *args, **kwargs):
         file_path = os.path.join(settings.BASE_DIR, 'import_files', 'updated.xlsx')
-        df = pd.read_excel(file_path)
+        
+        if HAS_PANDAS:
+            df = pd.read_excel(file_path)
+            data_list = df.to_dict('records')
+        else:
+            with open(file_path, 'rb') as f:
+                data_list = excel_to_dict_list(f, '.xlsx')
 
-        for _, row in df.iterrows():
+        for row in data_list:
             SalaryData.objects.update_or_create(
-                name=row['NAME'],
+                name=row.get('NAME', ''),
                 defaults={
-                    'basic_salary': row['SALARY'],
-                    'days_absent': row['ABSENT'],
-                    'days_present': row['DAYS'],
-                    'ot_hours': row['OT'],
-                    'ot_charges': row['OT CHARGES'],
-                    'late_minutes': row['LATE'],
-                    'late_charges': row['CHARGE'],
-                    'salary_wo_advance_deduction': row['SAL+OT'],
+                    'basic_salary': row.get('SALARY', 0),
+                    'days_absent': row.get('ABSENT', 0),
+                    'days_present': row.get('DAYS', 0),
+                    'ot_hours': row.get('OT', 0),
+                    'ot_charges': row.get('OT CHARGES', 0),
+                    'late_minutes': row.get('LATE', 0),
+                    'late_charges': row.get('CHARGE', 0),
+                    'salary_wo_advance_deduction': row.get('SAL+OT', 0),
                     'adv_paid_on_25th': row['ADVANCE'],
                     'repayment_of_old_adv': row['OLD ADV'],
                     'net_payable': row['NETT SALRY'],

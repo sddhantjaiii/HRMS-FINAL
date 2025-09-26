@@ -1083,7 +1083,13 @@ class UploadAttendanceDataAPIView(APIView):
             USE_PANDAS = os.environ.get('DJANGO_USE_LIGHTWEIGHT', 'false').lower() != 'true'
             if USE_PANDAS:
                 try:
-                    import pandas as pd
+                    from ..utils.utils import (
+                        excel_to_dict_list,
+                        lightweight_notna,
+                        lightweight_to_datetime,
+                        safe_float_conversion,
+                        safe_int_conversion
+                    )
                 except ImportError:
                     USE_PANDAS = False
             from ..models import DailyAttendance
@@ -1118,19 +1124,19 @@ class UploadAttendanceDataAPIView(APIView):
             
             try:
                 # Read Excel file
-                df = pd.read_excel(file_obj)
+                data, headers = excel_to_dict_list(file_obj, 'xlsx')
                 
                 # Check if this is daily attendance format or monthly summary format
                 daily_columns = ['Employee ID', 'Employee Name', 'Date', 'Status']
                 monthly_columns = ['Employee ID', 'Name', 'Department', 'Present Days', 'Absent Days', 'OT Hours', 'Late Minutes']
                 
-                is_daily_format = all(col in df.columns for col in daily_columns)
-                is_monthly_format = all(col in df.columns for col in monthly_columns)
+                is_daily_format = all(col in headers for col in daily_columns)
+                is_monthly_format = all(col in headers for col in monthly_columns)
                 
                 if not is_daily_format and not is_monthly_format:
                     return Response({
                         'error': f'Invalid file format. Expected either daily attendance columns: {", ".join(daily_columns)} or monthly summary columns: {", ".join(monthly_columns)}',
-                        'available_columns': list(df.columns)
+                        'available_columns': headers
                     }, status=status.HTTP_400_BAD_REQUEST)
                 
                 # Process data
@@ -1180,7 +1186,7 @@ class UploadAttendanceDataAPIView(APIView):
                     # Process each row for daily format
                     attendance_records = []
                 
-                for index, row in df.iterrows():
+                for index, row in enumerate(data):
                     try:
                         employee_id = str(row['Employee ID']).strip()
                         
@@ -1195,10 +1201,10 @@ class UploadAttendanceDataAPIView(APIView):
                                 continue
                             
                             # Get numeric values
-                            present_days = float(row.get('Present Days', 0)) if pd.notna(row.get('Present Days')) else 0
-                            absent_days = float(row.get('Absent Days', 0)) if pd.notna(row.get('Absent Days')) else 0
-                            ot_hours = float(row.get('OT Hours', 0)) if pd.notna(row.get('OT Hours')) else 0
-                            late_minutes = int(row.get('Late Minutes', 0)) if pd.notna(row.get('Late Minutes')) else 0
+                            present_days = safe_float_conversion(row.get('Present Days', 0))
+                            absent_days = safe_float_conversion(row.get('Absent Days', 0))
+                            ot_hours = safe_float_conversion(row.get('OT Hours', 0))
+                            late_minutes = safe_int_conversion(row.get('Late Minutes', 0))
                             
                             # Calculate total working days
                             total_working_days = present_days + absent_days
@@ -1259,7 +1265,7 @@ class UploadAttendanceDataAPIView(APIView):
                                 elif '-' in date_str:
                                     attendance_date = datetime.strptime(date_str, '%Y-%m-%d').date()
                                 else:
-                                    attendance_date = pd.to_datetime(date_str).date()
+                                    attendance_date = lightweight_to_datetime(date_str)
                             except:
                                 errors.append(f'Row {index + 2}: Invalid date format for {date_str}')
                                 continue
@@ -1271,8 +1277,8 @@ class UploadAttendanceDataAPIView(APIView):
                                 attendance_status = 'ABSENT'
                             
                             # Get optional fields
-                            ot_hours = float(row.get('OT Hours', 0)) if pd.notna(row.get('OT Hours')) else 0
-                            late_minutes = int(row.get('Late Minutes', 0)) if pd.notna(row.get('Late Minutes')) else 0
+                            ot_hours = safe_float_conversion(row.get('OT Hours', 0))
+                            late_minutes = safe_int_conversion(row.get('Late Minutes', 0))
                             department = str(row.get('Department', '')).strip()
                             designation = str(row.get('Designation', '')).strip()
                             

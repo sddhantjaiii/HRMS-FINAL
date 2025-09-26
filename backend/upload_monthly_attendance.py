@@ -48,12 +48,19 @@ def upload_monthly_attendance():
             }
             
             # Read and process the Excel file
-            import pandas as pd
-            df = pd.read_excel("July_2022_Attendance.xlsx")
+            from excel_data.utils.utils import (
+                excel_to_dict_list,
+                lightweight_notna,
+                safe_float_conversion,
+                safe_int_conversion
+            )
             
-            print(f"📊 Processing {len(df)} monthly attendance records...")
+            with open("July_2022_Attendance.xlsx", 'rb') as f:
+                data, headers = excel_to_dict_list(f, 'xlsx')
             
-            for index, row in df.iterrows():
+            print(f"📊 Processing {len(data)} monthly attendance records...")
+            
+            for index, row in enumerate(data):
                 try:
                     # Clean and validate data
                     employee_id = str(row['Employee ID']).strip()
@@ -61,10 +68,10 @@ def upload_monthly_attendance():
                     department = str(row.get('Department', '')).strip()
                     
                     # Handle numeric fields
-                    present_days = float(row.get('Present Days', 0)) if pd.notna(row.get('Present Days')) else 0
-                    absent_days = float(row.get('Absent Days', 0)) if pd.notna(row.get('Absent Days')) else 0
-                    ot_hours = float(row.get('OT Hours', 0)) if pd.notna(row.get('OT Hours')) else 0
-                    late_minutes = int(row.get('Late Minutes', 0)) if pd.notna(row.get('Late Minutes')) else 0
+                    present_days = safe_float_conversion(row.get('Present Days', 0))
+                    absent_days = safe_float_conversion(row.get('Absent Days', 0))
+                    ot_hours = safe_float_conversion(row.get('OT Hours', 0))
+                    late_minutes = safe_int_conversion(row.get('Late Minutes', 0))
                     
                     # Calculate total working days
                     total_working_days = present_days + absent_days

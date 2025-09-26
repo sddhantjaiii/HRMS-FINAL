@@ -11,7 +11,6 @@ from rest_framework import status, viewsets
 from rest_framework.permissions import IsAuthenticated
 from django.db import transaction
 from django.http import HttpResponse
-import pandas as pd
 from datetime import datetime
 import logging
 import openpyxl
@@ -33,6 +32,51 @@ from ..utils.utils import (
     validate_excel_columns,
     generate_employee_id,
 )
+
+
+def excel_to_dict_list(excel_file):
+    """
+    Convert Excel file to list of dictionaries (pandas-free).
+    Handles None values by replacing with appropriate defaults.
+    """
+    try:
+        workbook = openpyxl.load_workbook(excel_file, read_only=True)
+        sheet = workbook.active
+        
+        # Get headers from first row
+        headers = []
+        for cell in sheet[1]:
+            headers.append(cell.value if cell.value is not None else "")
+        
+        # Convert rows to dictionaries
+        data = []
+        for row in sheet.iter_rows(min_row=2, values_only=True):
+            row_dict = {}
+            for i, value in enumerate(row):
+                if i < len(headers):
+                    # Handle None values with appropriate defaults
+                    if value is None:
+                        if headers[i] in ["NAME", "Department"]:
+                            value = ""
+                        else:
+                            value = 0
+                    row_dict[headers[i]] = value
+            data.append(row_dict)
+        
+        workbook.close()
+        return data, headers
+    except Exception as e:
+        raise Exception(f"Error reading Excel file: {str(e)}")
+
+
+def filter_valid_rows(data):
+    """Filter out rows with invalid names (pandas-free)."""
+    valid_rows = []
+    for row in data:
+        name = row.get("NAME", "")
+        if is_valid_name(name):
+            valid_rows.append(row)
+    return valid_rows
 
 TEMPLATE_COLUMNS = [
     "NAME",
@@ -112,43 +156,12 @@ class UploadSalaryDataAPIView(APIView):
 
             try:
 
-                # Read Excel file with NaN handling
-
-                df = pd.read_excel(excel_file)
-
-                # Replace all NaN values with appropriate defaults before processing
-
-                df = df.fillna(
-                    {
-                        "NAME": "",
-                        "SALARY": 0,
-                        "ABSENT": 0,
-                        "DAYS": 0,
-                        "SL W/O OT": 0,
-                        "OT": 0,
-                        "HOUR RS": 0,
-                        "CHARGES": 0,
-                        "LATE": 0,
-                        "CHARGE": 0,
-                        "AMT": 0,
-                        "SAL+OT": 0,
-                        "25TH ADV": 0,
-                        "OLD ADV": 0,
-                        "NETT PAYABLE": 0,
-                        "Department": "",
-                        "Total old ADV": 0,
-                        "Balnce Adv": 0,
-                        "INCENTIVE": 0,
-                        "TDS": 0,
-                        "SAL-TDS": 0,
-                        "ADVANCE": 0,
-                    }
-                )
+                # Read Excel file with NaN handling (pandas-free)
+                data, headers = excel_to_dict_list(excel_file)
 
                 # Validate columns
-
                 is_valid, error_message = validate_excel_columns(
-                    df.columns.tolist(), TEMPLATE_COLUMNS
+                    headers, TEMPLATE_COLUMNS
                 )
 
                 if not is_valid:
@@ -171,8 +184,7 @@ class UploadSalaryDataAPIView(APIView):
                     )
 
                 # Filter out invalid rows BEFORE processing
-
-                valid_rows = df[df["NAME"].apply(is_valid_name)]
+                valid_rows = filter_valid_rows(data)
 
                 if len(valid_rows) == 0:
 
@@ -229,7 +241,7 @@ class UploadSalaryDataAPIView(APIView):
 
                 # Prepare bulk data
 
-                for index, row in valid_rows.iterrows():
+                for index, row in enumerate(valid_rows):
 
                     try:
 
@@ -420,7 +432,7 @@ class UploadSalaryDataAPIView(APIView):
                         "records_created": records_created,
                         "records_updated": records_updated,
                         "total_processed": len(valid_rows),
-                        "total_rows_in_file": len(df),
+                        "total_rows_in_file": len(data),
                         "errors": errors[:10],  # Show first 10 errors only
                         "total_errors": len(errors),
                     },

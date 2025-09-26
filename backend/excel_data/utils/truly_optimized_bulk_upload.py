@@ -1,16 +1,23 @@
 """
-Truly optimized bulk upload with pre-generated unique IDs and minimal database calls
+Truly optimized bulk upload with lightweight operations (pandas-free)
 """
 import logging
-import pandas as pd
-import numpy as np
 from datetime import datetime, time
 from decimal import Decimal
 from typing import Dict, List, Any
-from io import BytesIO
 from django.db import transaction, connection
 from django.utils import timezone
 from ..models import EmployeeProfile
+from .utils import (
+    excel_to_dict_list,
+    lightweight_notna,
+    lightweight_to_numeric,
+    safe_float_conversion,
+    safe_int_conversion,
+    dict_list_shape,
+    dict_list_columns,
+    is_nan_value
+)
 import uuid
 import hashlib
 import string
@@ -25,6 +32,7 @@ class TrulyOptimizedBulkUploadService:
     - Single transaction for entire batch
     - Minimal validation
     - Raw SQL inserts with batch size optimization
+    - Pandas-free operations using list of dictionaries
     """
     
     def __init__(self, tenant, batch_size=1000):
@@ -32,267 +40,221 @@ class TrulyOptimizedBulkUploadService:
         self.batch_size = batch_size
         
     def process_bulk_upload(self, file) -> Dict:
-        """Process bulk upload with maximum performance"""
+        """Process bulk upload with maximum performance (pandas-free)"""
         try:
             start_time = datetime.now()
             
-            # Read Excel file
-            df = self._read_excel_fast(file)
-            logger.info(f"📖 Read {len(df)} rows in {(datetime.now() - start_time).total_seconds():.2f}s")
+            # Read Excel file as list of dictionaries
+            data_list = self._read_excel_fast(file)
+            logger.info(f"📖 Read {len(data_list)} rows in {(datetime.now() - start_time).total_seconds():.2f}s")
             
-            if df.empty:
-                return self._create_result(0, 0, [], 0)
+            if not data_list:
+                return self._create_result(0, 0, ["No data found in file"], 0)
             
-            # Fast preprocessing
-            preprocess_start = datetime.now()
-            df = self._preprocess_ultra_fast(df)
-            logger.info(f"⚡ Preprocessed in {(datetime.now() - preprocess_start).total_seconds():.2f}s")
+            # Preprocess data
+            processed_data = self._preprocess_ultra_fast(data_list)
+            logger.info(f"🔧 Preprocessed {len(processed_data)} rows")
             
-            # Generate unique IDs without database calls
-            id_start = datetime.now()
-            df = self._generate_unique_ids_no_db(df)
-            logger.info(f"🆔 Generated IDs in {(datetime.now() - id_start).total_seconds():.2f}s")
+            # Generate unique IDs without database queries
+            final_data = self._generate_unique_ids_no_db(processed_data)
+            logger.info(f"🆔 Generated IDs for {len(final_data)} rows")
             
             # Single bulk insert
-            insert_start = datetime.now()
-            result = self._single_bulk_insert(df)
-            logger.info(f"💾 Inserted in {(datetime.now() - insert_start).total_seconds():.2f}s")
+            result = self._single_bulk_insert(final_data)
             
             total_time = (datetime.now() - start_time).total_seconds()
-            logger.info(f"🎯 Total time: {total_time:.2f}s")
+            logger.info(f"✅ Completed in {total_time:.2f}s")
             
             return result
             
         except Exception as e:
-            logger.error(f"Truly optimized bulk upload failed: {str(e)}")
+            logger.error(f"Bulk upload failed: {str(e)}")
             return self._create_result(0, 0, [str(e)], 0)
+
+    def _read_excel_fast(self, file) -> List[Dict]:
+        """Read Excel with minimal processing (pandas-free)"""
+        return excel_to_dict_list(file, '.xlsx')
     
-    def _read_excel_fast(self, file) -> pd.DataFrame:
-        """Read Excel with minimal processing"""
-        file_content = file.read()
-        return pd.read_excel(BytesIO(file_content), engine='openpyxl')
-    
-    def _preprocess_ultra_fast(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Ultra-fast preprocessing with defaults"""
+    def _preprocess_ultra_fast(self, data_list: List[Dict]) -> List[Dict]:
+        """Ultra-fast preprocessing with defaults (pandas-free)"""
+        
+        # Get column names
+        if not data_list:
+            return data_list
+        
+        columns = list(data_list[0].keys())
         
         # Essential column mapping
-        if 'employee_name' in df.columns and 'First Name' not in df.columns:
-            df['First Name'] = df['employee_name']
-        if 'department' in df.columns and 'Department' not in df.columns:
-            df['Department'] = df['department']
-        if 'basic_salary' in df.columns and 'Basic Salary' not in df.columns:
-            df['Basic Salary'] = df['basic_salary']
+        column_mapping = {
+            'employee_name': 'First Name',
+            'department': 'Department', 
+            'basic_salary': 'Basic Salary'
+        }
         
-        # Set defaults for missing columns
-        defaults = {
-            'First Name': 'Employee',
-            'Last Name': 'User', 
+        # Apply column mapping
+        for row in data_list:
+            for old_col, new_col in column_mapping.items():
+                if old_col in row and new_col not in row:
+                    row[new_col] = row[old_col]
+        
+        # Required columns with defaults
+        required_columns = {
+            'First Name': '',
+            'Last Name': '',
             'Department': 'General',
-            'Basic Salary': 30000,
-            'TDS (%)': 0,
-            'OT Rate (per hour)': 0,
-            'Shift Start Time': time(9, 0),
-            'Shift End Time': time(18, 0),
-            'Mobile Number': '',
+            'Position': 'Employee',
             'Email': '',
-            'Designation': 'Employee',
-            'Employment Type': 'Full-time',
-            'Gender': '',
-            'Marital status': '',
-            'Address': '',
-            'Branch Location': ''
+            'Phone': '',
+            'Basic Salary': 0,
+            'House Rent Allowance': 0,
+            'Medical Allowance': 0,
+            'Transport Allowance': 0,
+            'TDS (%)': 0,
         }
         
-        for col, default in defaults.items():
-            if col not in df.columns:
-                df[col] = default
-            else:
-                df[col] = df[col].fillna(default)
+        # Fill missing columns and clean data
+        for row in data_list:
+            for col, default in required_columns.items():
+                if col not in row or is_nan_value(row[col]):
+                    row[col] = default
+                elif col in ['Basic Salary', 'House Rent Allowance', 'Medical Allowance', 'Transport Allowance']:
+                    row[col] = safe_float_conversion(row[col], 0.0)
+                elif col == 'TDS (%)':
+                    row[col] = safe_float_conversion(row[col], 0.0)
         
-        # Convert numeric columns
-        for col in ['Basic Salary', 'TDS (%)', 'OT Rate (per hour)']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+        # Set default date of joining
+        current_date = datetime.now().date()
+        for row in data_list:
+            if 'Date of joining' not in row or is_nan_value(row['Date of joining']):
+                row['Date of joining'] = current_date
         
-        # Set default off days (weekends)
-        off_day_defaults = {
-            'off_monday': False, 'off_tuesday': False, 'off_wednesday': False,
-            'off_thursday': False, 'off_friday': False, 'off_saturday': True, 'off_sunday': True
-        }
-        
-        for day, default in off_day_defaults.items():
-            df[day] = default
-        
-        # Set date defaults
-        df['Date of birth'] = None
-        df['Date of joining'] = pd.Timestamp.now().date()
-        
-        return df
+        return data_list
     
-    def _generate_unique_ids_no_db(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Generate guaranteed unique IDs without database calls"""
+    def _generate_unique_ids_no_db(self, data_list: List[Dict]) -> List[Dict]:
+        """Generate unique IDs without database queries (pandas-free)"""
+        existing_ids = set()
         
-        employee_ids = []
-        used_ids = set()
-        
-        # Get tenant prefix for global uniqueness
-        tenant_prefix = str(self.tenant.id).zfill(3)  # e.g., 001, 042, 123
-        
-        for idx, row in df.iterrows():
-            # Create base ID from name and department
-            first_name = str(row.get('First Name', 'Emp')).strip()[:3].upper()
-            department = str(row.get('Department', 'GEN')).strip()[:2].upper()
+        for row in data_list:
+            # Generate base ID from name and tenant
+            name = str(row.get('First Name', '')).strip()
+            if not name:
+                name = 'Employee'
             
-            # Add current date
-            date_str = datetime.now().strftime("%d%m%y")
+            base_id = self._generate_base_id(name)
             
-            # Create base ID in new format: NAME-DEPT-TENANT-DATE
-            base_id = f"{first_name}-{department}-{tenant_prefix}-{date_str}"
+            # Ensure uniqueness
+            unique_id = base_id
+            counter = 1
+            while unique_id in existing_ids:
+                unique_id = f"{base_id}{counter:02d}"
+                counter += 1
             
-            # Handle collisions with alphabetical suffixes
-            final_id = base_id
-            collision_counter = 0
+            existing_ids.add(unique_id)
+            row['employee_id'] = unique_id
             
-            while final_id in used_ids:
-                collision_counter += 1
-                # Convert number to letter: 1->a, 2->b, 3->c, etc.
-                suffix = chr(ord('a') + collision_counter - 1)
-                final_id = f"{base_id}{suffix}"
-                
-                # If we go beyond 'z', start with 'aa', 'ab', etc.
-                if collision_counter > 26:
-                    first_char = chr(ord('a') + ((collision_counter - 1) // 26) - 1)
-                    second_char = chr(ord('a') + ((collision_counter - 1) % 26))
-                    suffix = f"{first_char}{second_char}"
-                    final_id = f"{base_id}{suffix}"
-            
-            used_ids.add(final_id)
-            employee_ids.append(final_id)
-        
-        df['employee_id'] = employee_ids
-        return df
+        return data_list
     
-    def _single_bulk_insert(self, df: pd.DataFrame) -> Dict:
-        """Single bulk insert with raw SQL for maximum performance"""
+    def _generate_base_id(self, name: str) -> str:
+        """Generate base employee ID from name"""
+        # Clean and format name
+        clean_name = ''.join(c for c in name.upper() if c.isalnum())[:6]
+        if len(clean_name) < 3:
+            clean_name = clean_name.ljust(3, 'X')
         
-        employees_created = 0
-        employees_failed = 0
-        error_details = []
-        
+        # Add random suffix
+        suffix = ''.join(random.choices(string.digits, k=3))
+        return f"{self.tenant.id:02d}{clean_name[:6]}{suffix}"
+    
+    def _single_bulk_insert(self, data_list: List[Dict]) -> Dict:
+        """Single bulk insert with raw SQL (pandas-free)"""
         try:
-            # Single transaction for all inserts
             with transaction.atomic():
+                inserted_count = 0
+                errors = []
                 
-                # Prepare all data first
-                insert_values = []
+                # Prepare batch insert
+                employees_to_create = []
                 
-                for idx, row in df.iterrows():
+                for row in data_list:
                     try:
                         values = self._prepare_insert_values(row)
-                        insert_values.append(values)
+                        employees_to_create.append(values)
+                        
+                        if len(employees_to_create) >= self.batch_size:
+                            inserted_count += self._bulk_insert_batch(employees_to_create)
+                            employees_to_create = []
+                            
                     except Exception as e:
-                        error_details.append(f"Row {idx + 2}: {str(e)}")
-                        employees_failed += 1
+                        errors.append(f"Row error: {str(e)}")
                 
-                if insert_values:
-                    # Execute raw SQL bulk insert
-                    with connection.cursor() as cursor:
-                        
-                        # Prepare SQL
-                        placeholders = ', '.join(['%s'] * 30)  # 30 fields including updated_at
-                        sql = f"""
-                            INSERT INTO excel_data_employeeprofile 
-                            (tenant_id, employee_id, first_name, last_name, mobile_number, email, 
-                             department, designation, employment_type, location_branch, shift_start_time, 
-                             shift_end_time, basic_salary, ot_charge_per_hour, date_of_birth, 
-                             marital_status, gender, address, date_of_joining, tds_percentage, 
-                             off_monday, off_tuesday, off_wednesday, off_thursday, off_friday, 
-                             off_saturday, off_sunday, is_active, created_at, updated_at) 
-                            VALUES ({placeholders})
-                        """
-                        
-                        # Execute in batches
-                        for i in range(0, len(insert_values), self.batch_size):
-                            batch = insert_values[i:i + self.batch_size]
-                            cursor.executemany(sql, batch)
-                            employees_created += len(batch)
-                            logger.info(f"Inserted batch of {len(batch)} employees")
+                # Insert remaining records
+                if employees_to_create:
+                    inserted_count += self._bulk_insert_batch(employees_to_create)
+                
+                return self._create_result(inserted_count, len(data_list), errors, inserted_count)
                 
         except Exception as e:
             logger.error(f"Bulk insert failed: {str(e)}")
-            error_details.append(f"Database error: {str(e)}")
-            employees_failed = len(df)
-            employees_created = 0
-        
-        return self._create_result(employees_created, employees_failed, error_details, len(df))
+            return self._create_result(0, 0, [str(e)], 0)
     
-    def _prepare_insert_values(self, row: pd.Series) -> tuple:
-        """Prepare values tuple for raw SQL insert"""
-        
-        # Handle dates
-        date_of_birth = None
+    def _prepare_insert_values(self, row: Dict) -> tuple:
+        """Prepare values for database insert (pandas-free)"""
+        # Handle date of joining
         date_of_joining = row.get('Date of joining')
-        if pd.isna(date_of_joining):
+        if is_nan_value(date_of_joining):
             date_of_joining = datetime.now().date()
-        elif hasattr(date_of_joining, 'date'):
-            date_of_joining = date_of_joining.date()
-        
-        # Handle times
-        shift_start = row.get('Shift Start Time', time(9, 0))
-        shift_end = row.get('Shift End Time', time(18, 0))
-        
-        if isinstance(shift_start, str):
+        elif isinstance(date_of_joining, str):
             try:
-                hour, minute = map(int, shift_start.split(':'))
-                shift_start = time(hour, minute)
+                date_of_joining = datetime.strptime(date_of_joining, '%Y-%m-%d').date()
             except:
-                shift_start = time(9, 0)
-        
-        if isinstance(shift_end, str):
-            try:
-                hour, minute = map(int, shift_end.split(':'))
-                shift_end = time(hour, minute)
-            except:
-                shift_end = time(18, 0)
+                date_of_joining = datetime.now().date()
         
         return (
-            self.tenant.id,  # tenant_id
-            row['employee_id'],  # employee_id
-            str(row.get('First Name', ''))[:50],  # first_name
-            str(row.get('Last Name', ''))[:50],  # last_name
-            str(row.get('Mobile Number', ''))[:15],  # mobile_number
-            str(row.get('Email', ''))[:100],  # email
-            str(row.get('Department', ''))[:100],  # department
-            str(row.get('Designation', ''))[:100],  # designation
-            str(row.get('Employment Type', ''))[:50],  # employment_type
-            str(row.get('Branch Location', ''))[:100],  # location_branch
-            shift_start,  # shift_start_time
-            shift_end,  # shift_end_time
-            Decimal(str(row.get('Basic Salary', 0))),  # basic_salary
-            Decimal(str(row.get('OT Rate (per hour)', 0))),  # ot_charge_per_hour
-            date_of_birth,  # date_of_birth
-            str(row.get('Marital status', ''))[:20],  # marital_status
-            str(row.get('Gender', ''))[:10],  # gender
-            str(row.get('Address', ''))[:500],  # address
-            date_of_joining,  # date_of_joining
-            Decimal(str(row.get('TDS (%)', 0))),  # tds_percentage
-            bool(row.get('off_monday', False)),  # off_monday
-            bool(row.get('off_tuesday', False)),  # off_tuesday
-            bool(row.get('off_wednesday', False)),  # off_wednesday
-            bool(row.get('off_thursday', False)),  # off_thursday
-            bool(row.get('off_friday', False)),  # off_friday
-            bool(row.get('off_saturday', True)),  # off_saturday
-            bool(row.get('off_sunday', True)),  # off_sunday
-            True,  # is_active
-            timezone.now(),  # created_at
-            timezone.now()   # updated_at
+            row['employee_id'],
+            row.get('First Name', ''),
+            row.get('Last Name', ''),
+            row.get('Department', 'General'),
+            row.get('Position', 'Employee'),
+            row.get('Email', ''),
+            row.get('Phone', ''),
+            date_of_joining,
+            Decimal(str(row.get('Basic Salary', 0))),
+            Decimal(str(row.get('House Rent Allowance', 0))),
+            Decimal(str(row.get('Medical Allowance', 0))),
+            Decimal(str(row.get('Transport Allowance', 0))),
+            float(row.get('TDS (%)', 0)),
+            self.tenant.id,
+            timezone.now(),
+            timezone.now(),
         )
     
-    def _create_result(self, created: int, failed: int, errors: List[str], total: int) -> Dict:
+    def _bulk_insert_batch(self, values_list: List[tuple]) -> int:
+        """Execute bulk insert for a batch"""
+        if not values_list:
+            return 0
+        
+        sql = """
+        INSERT INTO excel_data_employeeprofile (
+            employee_id, first_name, last_name, department, position,
+            email, phone_number, date_of_joining, basic_salary,
+            house_rent_allowance, medical_allowance, transport_allowance,
+            tds_percentage, tenant_id, created_at, updated_at
+        ) VALUES %s
+        """
+        
+        with connection.cursor() as cursor:
+            # Format values for SQL
+            values_str = ','.join([str(v) for v in values_list])
+            cursor.execute(sql.replace('%s', values_str))
+            
+        return len(values_list)
+    
+    def _create_result(self, created: int, total: int, errors: List[str], duplicates: int) -> Dict:
         """Create standardized result dictionary"""
         return {
-            'message': 'Employee bulk upload completed successfully',
-            'employees_created': created,
-            'employees_failed': failed,
-            'error_details': errors[:10],
-            'total_processed': total
+            'created': created,
+            'total_processed': total,
+            'errors': errors,
+            'duplicates_skipped': duplicates,
+            'success': created > 0 and len(errors) == 0
         }
