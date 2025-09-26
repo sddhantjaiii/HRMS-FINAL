@@ -8,7 +8,8 @@
         "runtime": "python3.11",
         "maxLambdaSize": "50mb",
         "memory": 1024,
-        "maxDuration": 30
+        "maxDuration": 30,
+        "pipInstallArgs": ["-r", "requirements.vercel.txt"]
       }
     }
   ],

@@ -22,10 +22,14 @@ def create_django_app():
         from django.core.wsgi import get_wsgi_application
         return get_wsgi_application()
         
-    except Exception as e:
+    except Exception as error:
         # Return error handler if Django fails
         import json
         import traceback
+        
+        # Capture the error details immediately
+        error_message = str(error)
+        error_traceback = traceback.format_exc()
         
         def error_handler(environ, start_response):
             status = '500 Internal Server Error'
@@ -34,15 +38,35 @@ def create_django_app():
             
             error_data = {
                 "error": "Django initialization failed",
-                "message": str(e),
-                "traceback": traceback.format_exc(),
+                "message": error_message,
+                "traceback": error_traceback,
                 "python_path": sys.path[:3],
-                "environment": dict(os.environ)
+                "environment": {k: v for k, v in os.environ.items() if not k.startswith('AWS')}
             }
             
             return [json.dumps(error_data, indent=2).encode('utf-8')]
         
         return error_handler
 
-# Create the application
-app = create_django_app()
+# Create the application with fallback
+try:
+    app = create_django_app()
+except Exception as e:
+    # Fallback WSGI app if Django creation fails
+    import json
+    
+    def fallback_app(environ, start_response):
+        status = '500 Internal Server Error'
+        headers = [('Content-Type', 'application/json')]
+        start_response(status, headers)
+        
+        error_data = {
+            "error": "Complete application failure",
+            "message": str(e),
+            "path_info": environ.get('PATH_INFO', 'unknown'),
+            "request_method": environ.get('REQUEST_METHOD', 'unknown')
+        }
+        
+        return [json.dumps(error_data, indent=2).encode('utf-8')]
+    
+    app = fallback_app
