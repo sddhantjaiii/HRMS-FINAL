@@ -20,5 +20,10 @@
   ],
   "env": {
     "VITE_BACKEND_URL": "@backend_url"
+  },
+  "functions": {
+    "src/main.tsx": {
+      "memory": 1024
+    }
   }
 }

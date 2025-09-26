@@ -2,7 +2,7 @@
   "version": 2,
   "builds": [
     {
-      "src": "backend/vercel_wsgi.py",
+      "src": "vercel_wsgi.py",
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.11"
@@ -12,23 +12,27 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "backend/vercel_wsgi.py"
+      "dest": "vercel_wsgi.py"
     },
     {
       "src": "/admin/(.*)",
-      "dest": "backend/vercel_wsgi.py"
+      "dest": "vercel_wsgi.py"
     },
     {
       "src": "/static/(.*)",
-      "dest": "backend/vercel_wsgi.py"
+      "dest": "vercel_wsgi.py"
+    },
+    {
+      "src": "/media/(.*)",
+      "dest": "vercel_wsgi.py"
     },
     {
       "src": "/(.*)",
-      "dest": "backend/vercel_wsgi.py"
+      "dest": "vercel_wsgi.py"
     }
   ],
   "env": {
     "DJANGO_SETTINGS_MODULE": "dashboard.settings",
-    "PYTHONPATH": "backend"
+    "PYTHONPATH": "."
   }
 }

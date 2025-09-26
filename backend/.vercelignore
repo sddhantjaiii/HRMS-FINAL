@@ -1,0 +1,50 @@
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+hrms/
+venv/
+env/
+ENV/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Test files
+tests/
+*test*.py
+
+# Documentation
+docs/
+*.md
+
+# Scripts and tools
+scripts/
+tools/
+
+# Local development
+.env
+config/local.env
+
+# Logs
+logs/
+
+# Uploads (if not needed in production)
+uploads/
+media/temp/
