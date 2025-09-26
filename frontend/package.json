@@ -6,8 +6,8 @@
   "scripts": {
     "start": "vite",
     "dev": "vite",
-    "build": "tsc && vite build",
-    "build:vercel": "vite build",
+    "build": "vite build",
+    "build:check": "tsc && vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
