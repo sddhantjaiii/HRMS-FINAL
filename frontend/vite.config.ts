@@ -1,12 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import path from 'path';
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
-  root: '.',
-  base: './',
+  root: process.cwd(),
+  base: '/',
   resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
     extensions: ['.ts', '.tsx', '.js', '.jsx']
   },
   optimizeDeps: {
@@ -26,5 +30,10 @@ export default defineConfig({
     assetsDir: 'assets',
     sourcemap: false,
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        main: path.resolve(__dirname, 'index.html')
+      }
+    }
   },
 });
