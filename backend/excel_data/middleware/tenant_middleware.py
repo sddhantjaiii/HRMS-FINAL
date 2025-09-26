@@ -15,6 +15,7 @@ class TenantMiddleware(MiddlewareMixin):
     
     # Public endpoints that don't require tenant context
     PUBLIC_ENDPOINTS = [
+        '/',  # Root endpoint
         '/api/public/signup/',
         '/api/public/login/',
         '/api/password-reset/',
@@ -23,6 +24,10 @@ class TenantMiddleware(MiddlewareMixin):
         '/api/accept-invitation/',
         '/api/validate-invitation-token/',
         '/api/health/',
+        '/api/database-check/',
+        '/health/',
+        '/health/db/',
+        '/database-check/',
         '/admin/',
         '/static/',
         '/media/',
@@ -67,60 +72,73 @@ class TenantMiddleware(MiddlewareMixin):
         5. Custom domain (custom-domain.com) - optional
         """
         
-        # Method 1: Try to get tenant from JWT token (PRIMARY METHOD)
-        tenant_from_token = self.get_tenant_from_jwt(request)
-        if tenant_from_token:
-            return tenant_from_token
-        
-        # Method 2: Header-based (for API clients)
-        tenant_id_header = request.headers.get('X-Tenant-ID')
-        if tenant_id_header:
-            try:
-                return Tenant.objects.get(id=tenant_id_header, is_active=True)
-            except (Tenant.DoesNotExist, ValueError):
-                pass
-        
-        tenant_subdomain_header = request.headers.get('X-Tenant-Subdomain')
-        if tenant_subdomain_header:
-            try:
-                return Tenant.objects.get(subdomain=tenant_subdomain_header, is_active=True)
-            except Tenant.DoesNotExist:
-                pass
-        
-        # Method 3: Query parameter
-        tenant_id_param = request.GET.get('tenant_id')
-        if tenant_id_param:
-            try:
-                return Tenant.objects.get(id=tenant_id_param, is_active=True)
-            except (Tenant.DoesNotExist, ValueError):
-                pass
-        
-        tenant_param = request.GET.get('tenant')
-        if tenant_param:
-            try:
-                return Tenant.objects.get(subdomain=tenant_param, is_active=True)
-            except Tenant.DoesNotExist:
-                pass
-        
-        # Method 4: Subdomain resolution (optional)
-        host = request.get_host().split(':')[0]  # Remove port if present
-        subdomain = self.extract_subdomain(host)
-        
-        if subdomain:
-            try:
-                return Tenant.objects.get(subdomain=subdomain, is_active=True)
-            except Tenant.DoesNotExist:
-                pass
-        
-        # Method 5: Custom domain (optional)
         try:
-            return Tenant.objects.get(custom_domain=host, is_active=True)
-        except Tenant.DoesNotExist:
-            pass
-        
-        # No tenant found - this is OK for single-tenant setups
-        logger.info(f"No tenant found for host: {host} - using default tenant resolution")
-        return None
+            # Method 1: Try to get tenant from JWT token (PRIMARY METHOD)
+            tenant_from_token = self.get_tenant_from_jwt(request)
+            if tenant_from_token:
+                return tenant_from_token
+            
+            # Method 2: Header-based (for API clients)
+            tenant_id_header = request.headers.get('X-Tenant-ID')
+            if tenant_id_header:
+                try:
+                    return Tenant.objects.get(id=tenant_id_header, is_active=True)
+                except (Tenant.DoesNotExist, ValueError):
+                    pass
+            
+            tenant_subdomain_header = request.headers.get('X-Tenant-Subdomain')
+            if tenant_subdomain_header:
+                try:
+                    return Tenant.objects.get(subdomain=tenant_subdomain_header, is_active=True)
+                except Tenant.DoesNotExist:
+                    pass
+            
+            # Method 3: Query parameter
+            tenant_id_param = request.GET.get('tenant_id')
+            if tenant_id_param:
+                try:
+                    return Tenant.objects.get(id=tenant_id_param, is_active=True)
+                except (Tenant.DoesNotExist, ValueError):
+                    pass
+            
+            tenant_param = request.GET.get('tenant')
+            if tenant_param:
+                try:
+                    return Tenant.objects.get(subdomain=tenant_param, is_active=True)
+                except Tenant.DoesNotExist:
+                    pass
+            
+            # Method 4: Subdomain resolution (optional)
+            host = request.get_host().split(':')[0]  # Remove port if present
+            subdomain = self.extract_subdomain(host)
+            
+            if subdomain:
+                try:
+                    return Tenant.objects.get(subdomain=subdomain, is_active=True)
+                except Tenant.DoesNotExist:
+                    pass
+            
+            # Method 5: Custom domain (optional)
+            try:
+                return Tenant.objects.get(custom_domain=host, is_active=True)
+            except Tenant.DoesNotExist:
+                pass
+            
+            # No tenant found - this is OK for single-tenant setups
+            logger.info(f"No tenant found for host: {host} - using default tenant resolution")
+            return None
+            
+        except Exception as e:
+            # Handle database connection errors or other issues
+            from django.db import OperationalError
+            if isinstance(e, OperationalError):
+                logger.error(f"Database connection error in tenant resolution: {e}")
+                # Return None to allow request to continue without tenant
+                return None
+            else:
+                logger.error(f"Unexpected error in tenant resolution: {e}")
+                # Re-raise non-database errors
+                raise
 
     def extract_subdomain(self, host):
         """
@@ -175,6 +193,13 @@ class TenantMiddleware(MiddlewareMixin):
                 except CustomUser.DoesNotExist:
                     logger.debug(f"User {user_id} not found")
                     pass
+                except Exception as db_error:
+                    from django.db import OperationalError
+                    if isinstance(db_error, OperationalError):
+                        logger.error(f"Database connection error in JWT tenant resolution: {db_error}")
+                        return None
+                    else:
+                        raise
                     
         except (jwt.InvalidTokenError, jwt.DecodeError, KeyError, ValueError) as e:
             logger.debug(f"JWT decode error: {e}")

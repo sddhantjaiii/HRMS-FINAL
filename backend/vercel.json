@@ -38,6 +38,13 @@
   "env": {
     "DJANGO_SETTINGS_MODULE": "dashboard.settings",
     "PYTHONPATH": ".",
-    "DJANGO_USE_LIGHTWEIGHT": "true"
+    "DJANGO_USE_LIGHTWEIGHT": "true",
+    "DATABASE_URL": "postgresql://neondb_owner:npg_kiW2lJnVcsu8@ep-lingering-block-a1olkbv3-pooler.ap-southeast-1.aws.neon.tech:5432/neondb?sslmode=require",
+    "DB_NAME": "neondb",
+    "DB_USER": "neondb_owner",
+    "DB_PASSWORD": "npg_kiW2lJnVcsu8",
+    "DB_HOST": "ep-lingering-block-a1olkbv3-pooler.ap-southeast-1.aws.neon.tech",
+    "DB_PORT": "5432",
+    "DEBUG": "False"
   }
 }

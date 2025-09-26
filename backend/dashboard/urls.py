@@ -24,7 +24,24 @@ try:
 except ImportError:
     HEALTH_CHECK_AVAILABLE = False
 
+from django.http import JsonResponse
+
+def root_endpoint(request):
+    """Simple root endpoint for deployment verification"""
+    return JsonResponse({
+        'message': 'HRMS Backend API is running',
+        'version': '1.0',
+        'status': 'ok',
+        'endpoints': {
+            'health': '/health/',
+            'database': '/health/db/',
+            'admin': '/admin/',
+            'api': '/api/'
+        }
+    })
+
 urlpatterns = [
+    path('', root_endpoint, name='root'),  # Root endpoint
     path('admin/', admin.site.urls),
     path('api/', include('excel_data.urls')),  # Main HRMS API endpoints
 ]

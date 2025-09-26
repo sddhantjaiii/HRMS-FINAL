@@ -88,7 +88,7 @@ AUTH_USER_MODEL = 'excel_data.CustomUser'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Database configuration - Neon PostgreSQL only
+# Database configuration - Neon PostgreSQL with better fallbacks
 DATABASE_URL = config('DATABASE_URL', default=None)
 
 try:
@@ -98,15 +98,19 @@ try:
         DATABASES = {
             'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)
         }
+        DATABASES['default']['OPTIONS'] = {
+            'sslmode': 'require',
+            'connect_timeout': 10,
+        }
     else:
-        # Use individual Neon database parameters
+        # Use individual Neon database parameters with production defaults
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.postgresql',
-                'NAME': config('DB_NAME', default='hrms'),  # Fallback name
-                'USER': config('DB_USER', default='postgres'),  # Fallback user
-                'PASSWORD': config('DB_PASSWORD', default=''),  # Required but empty fallback
-                'HOST': config('DB_HOST', default='localhost'),  # Fallback host
+                'NAME': config('DB_NAME', default='neondb'),
+                'USER': config('DB_USER', default='neondb_owner'),
+                'PASSWORD': config('DB_PASSWORD', default='npg_kiW2lJnVcsu8'),
+                'HOST': config('DB_HOST', default='ep-lingering-block-a1olkbv3-pooler.ap-southeast-1.aws.neon.tech'),
                 'PORT': config('DB_PORT', default='5432'),
                 'CONN_MAX_AGE': 600,  # Keep connections alive for 10 minutes
                 'CONN_HEALTH_CHECKS': True,  # Validate connections before use
@@ -116,15 +120,23 @@ try:
                 }
             }
         }
+    
+    # Log database configuration (without password)
+    db_config = DATABASES['default'].copy()
+    if 'PASSWORD' in db_config:
+        db_config['PASSWORD'] = '***'
+    print(f"🗄️  Database configured: {db_config}")
+    
 except Exception as e:
     # Fallback database configuration for deployment debugging
-    print(f"Database configuration error: {e}")
+    print(f"❌ Database configuration error: {e}")
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': ':memory:',  # Temporary in-memory database for debugging
         }
     }
+    print("⚠️  Using SQLite fallback database")
 
 # CORS Configuration
 # Allow override via environment variable for development

@@ -32,7 +32,7 @@ def health_check(request):
 
 @csrf_exempt
 def database_check(request):
-    """Database connection check"""
+    """Database connection check with detailed diagnostics"""
     try:
         from django.db import connection
         with connection.cursor() as cursor:
@@ -42,11 +42,37 @@ def database_check(request):
         return JsonResponse({
             'status': 'ok',
             'message': 'Database connection successful',
-            'result': result[0] if result else None
+            'result': result[0] if result else None,
+            'database_config': {
+                'engine': settings.DATABASES['default']['ENGINE'],
+                'name': settings.DATABASES['default']['NAME'],
+                'host': settings.DATABASES['default']['HOST'],
+                'port': settings.DATABASES['default']['PORT'],
+            },
+            'environment_vars': {
+                'DATABASE_URL': 'SET' if os.environ.get('DATABASE_URL') else 'NOT_SET',
+                'DB_NAME': os.environ.get('DB_NAME', 'NOT_SET'),
+                'DB_HOST': os.environ.get('DB_HOST', 'NOT_SET'),
+                'DB_USER': os.environ.get('DB_USER', 'NOT_SET'),
+                'DB_PASSWORD': 'SET' if os.environ.get('DB_PASSWORD') else 'NOT_SET',
+            }
         })
     except Exception as e:
         return JsonResponse({
             'status': 'error',
             'message': f'Database connection failed: {str(e)}',
-            'error_type': type(e).__name__
+            'error_type': type(e).__name__,
+            'database_config': {
+                'engine': settings.DATABASES['default']['ENGINE'],
+                'name': settings.DATABASES['default']['NAME'],
+                'host': settings.DATABASES['default']['HOST'],
+                'port': settings.DATABASES['default']['PORT'],
+            },
+            'environment_vars': {
+                'DATABASE_URL': 'SET' if os.environ.get('DATABASE_URL') else 'NOT_SET',
+                'DB_NAME': os.environ.get('DB_NAME', 'NOT_SET'),
+                'DB_HOST': os.environ.get('DB_HOST', 'NOT_SET'),
+                'DB_USER': os.environ.get('DB_USER', 'NOT_SET'),
+                'DB_PASSWORD': 'SET' if os.environ.get('DB_PASSWORD') else 'NOT_SET',
+            }
         }, status=500)
