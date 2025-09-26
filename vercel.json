@@ -6,7 +6,15 @@
       "use": "@vercel/python",
       "config": {
         "maxLambdaSize": "15mb",
-        "runtime": "python3.11"
+        "runtime": "python3.11",
+        "includeFiles": "backend/**",
+        "excludeFiles": [
+          "backend/monthly_attendance_fixed/**",
+          "backend/tests/**",
+          "backend/scripts/**",
+          "backend/__pycache__/**",
+          "backend/**/__pycache__/**"
+        ]
       }
     }
   ],
@@ -31,17 +39,5 @@
   "env": {
     "DJANGO_SETTINGS_MODULE": "dashboard.settings",
     "PYTHONPATH": "backend"
-  },
-  "functions": {
-    "backend/vercel_wsgi.py": {
-      "includeFiles": "backend/**",
-      "excludeFiles": [
-        "backend/monthly_attendance_fixed/**",
-        "backend/tests/**",
-        "backend/scripts/**",
-        "backend/__pycache__/**",
-        "backend/**/__pycache__/**"
-      ]
-    }
   }
 }
