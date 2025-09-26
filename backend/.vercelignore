@@ -48,3 +48,23 @@ logs/
 # Uploads (if not needed in production)
 uploads/
 media/temp/
+
+# Large Excel files that might be causing size issues
+*.xlsx
+*.xls
+July_2022_Attendance.xlsx
+attendance_template.xlsx
+
+# Python scripts not needed in production
+cleanup_duplicate_employees.py
+create_missing_employees_from_attendance.py
+upload_all_attendance.py
+upload_monthly_attendance.py
+upload_multiple_months.py
+check_attendance_data.py
+
+# Database optimization scripts (not needed in production)
+database/
+
+# Original requirements (keeping the streamlined version)
+requirements.txt.bak

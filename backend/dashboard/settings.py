@@ -272,18 +272,23 @@ if not DEBUG:
         default='https://*.vercel.app', 
         cast=lambda v: [s.strip() for s in v.split(',')])
 
-# AWS Configuration (for production)
-if config('USE_S3', default=False, cast=bool):
-    # AWS S3 Configuration
-    AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
-    AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
-    AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
-    AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
-    AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
-    
-    # Static files configuration
-    STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-    DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+# AWS Configuration (disabled for Vercel deployment to reduce size)
+USE_S3_STORAGE = config('USE_S3', default=False, cast=bool)
+if USE_S3_STORAGE and not config('DJANGO_USE_LIGHTWEIGHT', default=False, cast=bool):
+    # AWS S3 Configuration (only if not in lightweight mode)
+    try:
+        AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
+        AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
+        AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
+        AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='us-east-1')
+        AWS_S3_CUSTOM_DOMAIN = f'{AWS_STORAGE_BUCKET_NAME}.s3.amazonaws.com'
+        
+        # Static files configuration
+        STATICFILES_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+        DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+    except Exception:
+        # Fallback to local storage if S3 config fails
+        pass
 
 # Email Configuration
 EMAIL_BACKEND = config('EMAIL_BACKEND', default='django.core.mail.backends.smtp.EmailBackend')

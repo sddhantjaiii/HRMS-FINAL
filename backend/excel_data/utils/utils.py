@@ -1,6 +1,21 @@
 import threading
-import pandas as pd
-import numpy as np
+import os
+
+# Check if we're in a production/lightweight environment
+USE_LIGHTWEIGHT = os.environ.get('DJANGO_USE_LIGHTWEIGHT', 'false').lower() == 'true'
+
+if USE_LIGHTWEIGHT:
+    # Import lightweight functions for production
+    from .utils_lightweight import *
+else:
+    # Import heavy dependencies for development
+    try:
+        import pandas as pd
+        import numpy as np
+    except ImportError:
+        # Fallback to lightweight if pandas/numpy not available
+        from .utils_lightweight import *
+        USE_LIGHTWEIGHT = True
 
 # Thread local storage for current tenant
 _thread_local = threading.local()

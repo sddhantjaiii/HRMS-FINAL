@@ -1075,9 +1075,17 @@ class UploadAttendanceDataAPIView(APIView):
 
     def post(self, request):
         try:
-            import pandas as pd
             from datetime import datetime, date
             from django.db import transaction
+            import os
+            
+            # Check if pandas is available
+            USE_PANDAS = os.environ.get('DJANGO_USE_LIGHTWEIGHT', 'false').lower() != 'true'
+            if USE_PANDAS:
+                try:
+                    import pandas as pd
+                except ImportError:
+                    USE_PANDAS = False
             from ..models import DailyAttendance
             
             # Get tenant
