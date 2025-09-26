@@ -6,7 +6,9 @@
       "use": "@vercel/python",
       "config": {
         "runtime": "python3.11",
-        "maxLambdaSize": "50mb"
+        "maxLambdaSize": "50mb",
+        "memory": 1024,
+        "maxDuration": 30
       }
     }
   ],
@@ -36,11 +38,5 @@
     "DJANGO_SETTINGS_MODULE": "dashboard.settings",
     "PYTHONPATH": ".",
     "DJANGO_USE_LIGHTWEIGHT": "true"
-  },
-  "functions": {
-    "vercel_wsgi.py": {
-      "memory": 1024,
-      "maxDuration": 30
-    }
   }
 }
