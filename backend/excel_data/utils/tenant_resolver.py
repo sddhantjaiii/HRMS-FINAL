@@ -1,5 +1,5 @@
-# Tenant Resolution Utility
-# This utility provides a consistent way to resolve tenant for authenticated users
+# Tenant Resolution Utility - Domain-Free Multi-Tenant
+# Each user gets their own workspace, no domain complexity
 
 import logging
 
@@ -7,13 +7,10 @@ logger = logging.getLogger(__name__)
 
 def resolve_tenant_for_request(request):
     """
-    Smart tenant resolution for authenticated users.
+    Domain-free tenant resolution for authenticated users.
     
-    Priority:
-    1. Check if tenant already set in request
-    2. Get tenant from authenticated user 
-    3. Try to find any active tenant (for single company setups)
-    4. Optionally assign default tenant to user
+    Each user should have their own tenant (workspace) assigned during signup.
+    No auto-assignment to prevent data leakage between companies.
     
     Returns:
         Tenant object or None
@@ -26,7 +23,7 @@ def resolve_tenant_for_request(request):
     # Try to resolve from authenticated user
     if hasattr(request, 'user') and request.user.is_authenticated:
         try:
-            # Get tenant from user
+            # Get tenant from user (should have been assigned during signup)
             user_tenant = getattr(request.user, 'tenant', None)
             if user_tenant and user_tenant.is_active:
                 # Set tenant in request for downstream processing
@@ -34,27 +31,11 @@ def resolve_tenant_for_request(request):
                 logger.info(f"Resolved tenant from authenticated user: {user_tenant.name}")
                 return user_tenant
             else:
-                # Try to find or create a default tenant for this user
-                logger.warning(f"User {request.user.email} has no active tenant, attempting to resolve...")
+                # User has no tenant - this is a signup/configuration issue
+                logger.error(f"User {request.user.email} has no tenant assigned. Each user should have their own workspace.")
+                # DO NOT auto-assign to existing tenants for security
+                # This prevents data leakage between different companies
                 
-                # Import here to avoid circular imports
-                from ..models import Tenant
-                
-                # Try to get any active tenant (for single company setups)
-                default_tenant = Tenant.objects.filter(is_active=True).first()
-                if default_tenant:
-                    logger.info(f"Using default tenant for user: {default_tenant.name}")
-                    # Optionally assign this tenant to the user if they don't have one
-                    if not request.user.tenant:
-                        request.user.tenant = default_tenant
-                        request.user.save()
-                        logger.info(f"Assigned default tenant to user {request.user.email}")
-                    # Set tenant in request
-                    request.tenant = default_tenant
-                    return default_tenant
-                else:
-                    logger.error("No active tenants found in the system")
-                    
         except Exception as e:
             logger.error(f"Error resolving tenant for user {request.user.email}: {e}")
     

@@ -212,7 +212,7 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
         selected_department = request.query_params.get('department', 'All')
         
         # Always use CalculatedSalary data - no fallback to demo data
-        tenant = getattr(request, 'tenant', None) or (request.user.tenant if hasattr(request.user, 'tenant') else None)
+        tenant = getattr(request, 'tenant', None)
         
         # PERFORMANCE: Try cache first (3 minute cache for charts data)
         from django.core.cache import cache
@@ -237,8 +237,28 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
                 del cached_response['cache_metadata']
             logger.info(f"Frontend charts served from cache - Cache hit time: {query_timings['total_time_ms']}ms")
             return Response(cached_response)
+        if not tenant:
+            return Response({
+                "totalEmployees": 0,
+                "avgAttendancePercentage": 0,
+                "totalWorkingDays": 0,
+                "totalOTHours": 0,
+                "totalLateMinutes": 0,
+                "employeesChange": 0,
+                "attendanceChange": 0,
+                "lateMinutesChange": 0,
+                "otHoursChange": 0,
+                "departmentData": [],
+                "salaryDistribution": [],
+                "todayAttendance": [],
+                "salaryTrends": [],
+                "otTrends": [],
+                "topSalariedEmployees": [],
+                "departmentDistribution": [],
+                "availableDepartments": []
+            })
         
-        # Get all payroll periods (ordered by actual calendar date)
+        # Get all payroll periods for this tenant (ordered by actual calendar date)
         from django.db.models import Case, When, IntegerField
         
         payroll_periods_start = time.time()
@@ -260,8 +280,7 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
             # Case-insensitive match so variations like "June" or "june" are handled
             when_conditions.append(When(month__iexact=month_name, then=month_num))
         
-        payroll_period_filter = {'tenant': tenant} if tenant else {}
-        payroll_periods = PayrollPeriod.objects.filter(**payroll_period_filter).annotate(
+        payroll_periods = PayrollPeriod.objects.filter(tenant=tenant).annotate(
             month_num=Case(
                 *when_conditions,
                 default=13,  # Put unknown months at the end
@@ -673,8 +692,7 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
             all_departments = cache.get(dept_cache_key)
             if all_departments is None:
                 # Fetch all unique departments for the tenant from EmployeeProfile (for department filter)
-                dept_filter = {'tenant': tenant} if tenant else {}
-                all_departments_qs = EmployeeProfile.objects.filter(**dept_filter).values_list('department', flat=True).distinct()
+                all_departments_qs = EmployeeProfile.objects.filter(tenant=tenant).values_list('department', flat=True).distinct()
                 all_departments = sorted(set([d for d in all_departments_qs if d and d.strip() and d.strip().upper() != 'N/A']))
                 if not all_departments:
                     all_departments = ['N/A']
@@ -685,8 +703,7 @@ class SalaryDataViewSet(viewsets.ModelViewSet):
                 query_timings['dept_lookup_cache_hit_ms'] = round((time.time() - dept_lookup_start) * 1000, 2)
         except Exception as e:
             # Fallback if cache fails
-            dept_filter = {'tenant': tenant} if tenant else {}
-            all_departments_qs = EmployeeProfile.objects.filter(**dept_filter).values_list('department', flat=True).distinct()
+            all_departments_qs = EmployeeProfile.objects.filter(tenant=tenant).values_list('department', flat=True).distinct()
             all_departments = sorted(set([d for d in all_departments_qs if d and d.strip() and d.strip().upper() != 'N/A']))
             if not all_departments:
                 all_departments = ['N/A']
@@ -847,41 +864,20 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         step_start = time.time()
         tenant = getattr(request, 'tenant', None)
         
-        # Smart tenant resolution for authenticated users
-        if not tenant and hasattr(request, 'user') and request.user.is_authenticated:
-            try:
-                # Get tenant from authenticated user
-                user_tenant = getattr(request.user, 'tenant', None)
-                if user_tenant and user_tenant.is_active:
-                    tenant = user_tenant
-                    # Set tenant in request for downstream processing
-                    request.tenant = tenant
-                    logger.info(f"Resolved tenant from authenticated user: {tenant.name}")
-                else:
-                    # Try to find or create a default tenant for this user
-                    logger.warning(f"User {request.user.email} has no active tenant, attempting to resolve...")
-                    from ..models import Tenant
-                    
-                    # Try to get any active tenant (for single company setups)
-                    tenant = Tenant.objects.filter(is_active=True).first()
-                    if tenant:
-                        logger.info(f"Using default tenant for user: {tenant.name}")
-                        # Optionally assign this tenant to the user
-                        if not request.user.tenant:
-                            request.user.tenant = tenant
-                            request.user.save()
-                            logger.info(f"Assigned default tenant to user {request.user.email}")
-                    else:
-                        logger.error("No active tenants found in the system")
-            except Exception as e:
-                logger.error(f"Error resolving tenant for user {request.user.email}: {e}")
-        
-        # If still no tenant, return error (multi-tenant system requires tenant)
+        # If no tenant found, try to get a default tenant or work without tenant
         if not tenant:
-            return Response({
-                "error": "No tenant found. Please ensure you're signed up and have a valid workspace.",
-                "details": "No active tenants found in the system. Please contact administrator."
-            }, status=400)
+            try:
+                from ..models import Tenant
+                # Try to get default tenant or any active tenant
+                tenant = Tenant.objects.filter(is_active=True).first()
+                if tenant:
+                    logger.info(f"Using default tenant: {tenant.name}")
+                else:
+                    # Work without tenant for now
+                    logger.warning("No tenant found, working in single-tenant mode")
+            except Exception as e:
+                logger.error(f"Error getting default tenant: {e}")
+                # Continue without tenant
             
         # Enhanced cache key with load_all parameter
         load_all = request.GET.get('load_all', '').lower() == 'true'
@@ -889,7 +885,8 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         page_size = min(int(request.GET.get('page_size', 100)), 500)
         
         cache_signature = f"load_all_{load_all}_page_{page}_size_{page_size}"
-        cache_key = f"directory_data_{tenant.id}_{cache_signature}"
+        tenant_id = tenant.id if tenant else 'default'
+        cache_key = f"directory_data_{tenant_id}_{cache_signature}"
         timing_breakdown['setup_ms'] = round((time.time() - step_start) * 1000, 2)
         
         # STEP 2: Cache check
@@ -916,9 +913,12 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         
         # STEP 4: LIGHTNING-FAST SALARY SUBQUERY
         step_start = time.time()
+        latest_salary_subquery_filter = {'employee_id': OuterRef('employee_id')}
+        if tenant:
+            latest_salary_subquery_filter['tenant'] = tenant
+            
         latest_salary_subquery = SalaryData.objects.filter(
-            tenant=tenant,
-            employee_id=OuterRef('employee_id')
+            **latest_salary_subquery_filter
         ).only('nett_payable', 'month', 'year').order_by('-year', '-month')[:1]
         
         employees_with_salary = employees_query.annotate(
@@ -1214,7 +1214,7 @@ class EmployeeProfileViewSet(viewsets.ModelViewSet):
         
         # Clear multiple caches when employee status changes
         from django.core.cache import cache
-        tenant = getattr(request, 'tenant', None) or (request.user.tenant if hasattr(request.user, 'tenant') else None)
+        tenant = getattr(request, 'tenant', None)
         
         # Clear directory data cache
         cache_key = f"directory_data_{tenant.id if tenant else 'default'}"

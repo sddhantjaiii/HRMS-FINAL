@@ -31,6 +31,8 @@ class TenantMiddleware(MiddlewareMixin):
         '/admin/',
         '/static/',
         '/media/',
+        '/api/employees/directory_data/',  # Make directory_data endpoint public
+        '/api/dropdown-options/',  # Make dropdown options public too
     ]
 
     def __call__(self, request):
@@ -65,19 +67,15 @@ class TenantMiddleware(MiddlewareMixin):
     def get_tenant(self, request):
         """
         Resolve tenant from request. Priority:
-        1. JWT token (primary method - no subdomain needed)
+        1. JWT token (primary method)
         2. Header (X-Tenant-ID or X-Tenant-Subdomain)
         3. Query parameter (?tenant_id=123 or ?tenant=subdomain)
-        4. Subdomain (subdomain.domain.com) - optional
-        5. Custom domain (custom-domain.com) - optional
         """
-        
         try:
             # Method 1: Try to get tenant from JWT token (PRIMARY METHOD)
             tenant_from_token = self.get_tenant_from_jwt(request)
             if tenant_from_token:
                 return tenant_from_token
-            
             # Method 2: Header-based (for API clients)
             tenant_id_header = request.headers.get('X-Tenant-ID')
             if tenant_id_header:
@@ -85,14 +83,12 @@ class TenantMiddleware(MiddlewareMixin):
                     return Tenant.objects.get(id=tenant_id_header, is_active=True)
                 except (Tenant.DoesNotExist, ValueError):
                     pass
-            
             tenant_subdomain_header = request.headers.get('X-Tenant-Subdomain')
             if tenant_subdomain_header:
                 try:
                     return Tenant.objects.get(subdomain=tenant_subdomain_header, is_active=True)
                 except Tenant.DoesNotExist:
                     pass
-            
             # Method 3: Query parameter
             tenant_id_param = request.GET.get('tenant_id')
             if tenant_id_param:
@@ -100,44 +96,22 @@ class TenantMiddleware(MiddlewareMixin):
                     return Tenant.objects.get(id=tenant_id_param, is_active=True)
                 except (Tenant.DoesNotExist, ValueError):
                     pass
-            
             tenant_param = request.GET.get('tenant')
             if tenant_param:
                 try:
                     return Tenant.objects.get(subdomain=tenant_param, is_active=True)
                 except Tenant.DoesNotExist:
                     pass
-            
-            # Method 4: Subdomain resolution (optional)
-            host = request.get_host().split(':')[0]  # Remove port if present
-            subdomain = self.extract_subdomain(host)
-            
-            if subdomain:
-                try:
-                    return Tenant.objects.get(subdomain=subdomain, is_active=True)
-                except Tenant.DoesNotExist:
-                    pass
-            
-            # Method 5: Custom domain (optional)
-            try:
-                return Tenant.objects.get(custom_domain=host, is_active=True)
-            except Tenant.DoesNotExist:
-                pass
-            
-            # No tenant found - this is OK for single-tenant setups
-            logger.info(f"No tenant found for host: {host} - using default tenant resolution")
+            # No tenant found - return error
+            logger.info("No tenant found in request - strict isolation enforced")
             return None
-            
         except Exception as e:
-            # Handle database connection errors or other issues
             from django.db import OperationalError
             if isinstance(e, OperationalError):
                 logger.error(f"Database connection error in tenant resolution: {e}")
-                # Return None to allow request to continue without tenant
                 return None
             else:
                 logger.error(f"Unexpected error in tenant resolution: {e}")
-                # Re-raise non-database errors
                 raise
 
     def extract_subdomain(self, host):

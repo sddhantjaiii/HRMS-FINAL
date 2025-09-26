@@ -495,17 +495,13 @@ class TenantSignupView(APIView):
 
             # Get signup data
             import re  # Import re module at the top
+            import uuid
 
             company_name = data.get("company_name", "").strip()
-
-            subdomain = data.get("subdomain", "").strip().lower()
-            # Generate subdomain from company name if not provided
-            if not subdomain:
-                subdomain = company_name.lower().replace(" ", "-").replace("_", "-")
-                # Remove special characters and ensure uniqueness
-                subdomain = re.sub(r"[^a-z0-9-]", "", subdomain)
-                if not subdomain:
-                    subdomain = f"company-{Tenant.objects.count() + 1}"
+            
+            # Generate unique workspace identifier (no domain needed)
+            workspace_id = str(uuid.uuid4())[:8]  # Short unique ID
+            subdomain = f"ws-{workspace_id}"  # Simple workspace identifier
 
             admin_email = data.get("email", "").strip().lower()
 
